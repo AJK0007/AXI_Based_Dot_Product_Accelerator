@@ -30,8 +30,8 @@ module axi_master #(
     output reg                      MEM_ARVALID,
     input wire                      MEM_ARREADY,
     input wire [7:0]                MEM_RDATA,
-    output reg                      MEM_RVALID,
-    input wire                      MEM_RREADY,
+    input wire                      MEM_RVALID,
+    output reg                      MEM_RREADY,
 
     output reg [ADDR_WIDTH-1:0]     MEM_AWADDR,
     output reg                      MEM_AWVALID,
@@ -72,7 +72,7 @@ module axi_master #(
 	// Done Flags for the Main FSM
 	reg								config_read_done;
 	reg								vector_read_done;
-	reg								DP_DONE;
+	reg								dot_product_done;
 	reg								result_write_done;
 	reg								config_write_done;
 
@@ -130,7 +130,7 @@ module axi_master #(
                 end
             end
             COMPUTE: begin
-                if (DP_DONE) begin
+                if (dot_product_done) begin
                     next_state = WRITE_RESULT;
                 end
             end
@@ -158,7 +158,8 @@ module axi_master #(
 typedef enum logic [1:0] {
     SLV_READ_IDLE,
     SLV_READ_ADDR,
-    SLV_READ_DATA
+    SLV_READ_DATA,
+	SLV_UPDATE_ADDR
 } read_state_axi_slave;
 
 read_state_axi_slave current_state_slave_read;
@@ -204,17 +205,20 @@ always @(posedge ACLK or negedge ARESETN) begin
                         REG4_ADDR: OUTPUT_ADDR <= RDATA;
                     endcase
                     RREADY <= 0; // Data captured
+                    current_state_slave_read <= SLV_UPDATE_ADDR;
+				end
+            end
 
-                    if (ARADDR == REG4_ADDR) begin
-                        config_read_done <= 1; // All registers read
-                        current_state_slave_read <= SLV_READ_IDLE;
-                    end else begin
-						if (CONTROL_REG == 32'h0000_0001) begin // Proceed only if start bit in REG0/CONTROL_REG is set
-							ARADDR <= ARADDR + 4; // Move to the next register (assuming 32-bit registers)
-							ARVALID <= 1;
-							current_state_slave_read <= SLV_READ_ADDR;
-						end
-                    end
+            SLV_UPDATE_ADDR: begin
+                if (ARADDR == REG4_ADDR) begin
+                    config_read_done <= 1; // All registers read
+                    current_state_slave_read <= SLV_READ_IDLE;
+                end else begin
+					if (CONTROL_REG == 32'h0000_0001) begin // Proceed only if start bit in REG0/CONTROL_REG is set
+						ARADDR <= ARADDR + 4; // Move to the next register (assuming 32-bit registers)
+						ARVALID <= 1;
+						current_state_slave_read <= SLV_READ_ADDR;
+					end
                 end
             end
         endcase
@@ -313,27 +317,29 @@ end
 
 
 // Instantiating dot_product_accelerator module
-dot_product_accelerator dp_accelerator (
-    .ACLK(ACLK),
-    .ARESETN(ARESETN),
-    .DP_A(DP_A),
-    .DP_B(DP_B),
-	.inputs_ready(inputs_ready),
-    .DP_START(DP_START),
-    .DP_RESULT(DP_RESULT),
-    .DP_DONE(DP_DONE)
-);
+//dot_product_accelerator dp_accelerator (
+//    .ACLK(ACLK),
+//    .ARESETN(ARESETN),
+//    .DP_A(DP_A),
+//    .DP_B(DP_B),
+//	.inputs_ready(inputs_ready),
+//    .DP_START(DP_START),
+//    .DP_RESULT(DP_RESULT),
+//    .DP_DONE(DP_DONE)
+//);
 
     // Dot Product Computation Logic
     always @(posedge ACLK or negedge ARESETN) begin
         if (!ARESETN) begin
             DP_START <= 0;
             dot_product_result <= 0;
-        end else if (current_state == COMPUTE) begin
+			dot_product_done <= 0;
+        end else if (current_state == COMPUTE && !dot_product_done) begin
             DP_START <= 1;
             if (DP_DONE) begin
                 dot_product_result <= DP_RESULT;
                 DP_START <= 0;
+				dot_product_done <= 1;
             end
         end
     end
@@ -385,7 +391,12 @@ always @(posedge ACLK or negedge ARESETN) begin
             MEM_WRITE_ADDR: begin
                 if (MEM_AWREADY) begin
                     MEM_AWVALID <= 0;  // Address accepted
-                    MEM_WDATA   <= dot_product_result[(byte_counter * 8) + 7 : byte_counter * 8]; // Select the correct byte
+                    case (byte_counter)
+                        0: MEM_WDATA <= dot_product_result[7:0];
+                        1: MEM_WDATA <= dot_product_result[15:8];
+                        2: MEM_WDATA <= dot_product_result[23:16];
+                        3: MEM_WDATA <= dot_product_result[31:24];
+                    endcase
                     MEM_WVALID  <= 1;
                     current_state_mem_write <= MEM_WRITE_DATA;
                 end
@@ -430,7 +441,7 @@ typedef enum logic [2:0] {
     SLV_WRITE_RESP_REG5
 } write_state_axi_slave;
 
-write_state_axi_slave current_state_mem_write;
+write_state_axi_slave current_state_slave_write;
 
 // AXI Master <-> AXI-Lite Write Slave Configuration Registers Logic
 always @(posedge ACLK or negedge ARESETN) begin
@@ -441,14 +452,14 @@ always @(posedge ACLK or negedge ARESETN) begin
         WVALID  <= 0;
         BREADY  <= 0;
         config_write_done <= 0;
-        current_state_mem_write <= SLV_WRITE_IDLE;
+        current_state_slave_write <= SLV_WRITE_IDLE;
     end else begin
-        case (current_state_mem_write)
+        case (current_state_slave_write)
             SLV_WRITE_IDLE: begin
                 if (current_state == UPDATE_STATUS && !config_write_done) begin
                     AWADDR  <= REG4_ADDR; // Write to REG4 (Output Register)
                     AWVALID <= 1;
-                    current_state_mem_write <= SLV_WRITE_ADDR_REG4;
+                    current_state_slave_write <= SLV_WRITE_ADDR_REG4;
                 end
             end
 
@@ -457,7 +468,7 @@ always @(posedge ACLK or negedge ARESETN) begin
                     AWVALID <= 0;  // Address accepted
                     WDATA <= dot_product_result; // Write the dot product result to REG4
                     WVALID  <= 1;
-                    current_state_mem_write <= SLV_WRITE_REG4;
+                    current_state_slave_write <= SLV_WRITE_REG4;
                 end
             end
 
@@ -465,7 +476,7 @@ always @(posedge ACLK or negedge ARESETN) begin
                 if (WREADY) begin
                     WVALID <= 0; // Data accepted
                     BREADY <= 1; // Ready to accept write response
-                    current_state_mem_write <= SLV_WRITE_RESP_REG4;
+                    current_state_slave_write <= SLV_WRITE_RESP_REG4;
                 end
             end
 
@@ -474,7 +485,7 @@ always @(posedge ACLK or negedge ARESETN) begin
                     BREADY <= 0; // Response accepted
                     AWADDR  <= REG5_ADDR; // Write to REG5 (Status Register)
                     AWVALID <= 1;
-                    current_state_mem_write <= SLV_WRITE_ADDR_REG5;
+                    current_state_slave_write <= SLV_WRITE_ADDR_REG5;
                 end
 			end
 
@@ -483,7 +494,7 @@ always @(posedge ACLK or negedge ARESETN) begin
                     AWVALID <= 0;  // Address accepted
                     WDATA <= 32'h0000_0001; // Set "done" flag
                     WVALID  <= 1;
-                    current_state_mem_write <= SLV_WRITE_REG5;
+                    current_state_slave_write <= SLV_WRITE_REG5;
                 end
 			end
 
@@ -491,7 +502,7 @@ always @(posedge ACLK or negedge ARESETN) begin
                 if (WREADY) begin
                     WVALID <= 0; // Data accepted
                     BREADY <= 1; // Ready to accept write response
-                    current_state_mem_write <= SLV_WRITE_RESP_REG5;
+                    current_state_slave_write <= SLV_WRITE_RESP_REG5;
                 end
 			end
 
@@ -499,7 +510,7 @@ always @(posedge ACLK or negedge ARESETN) begin
                 if (BVALID) begin
                     BREADY <= 0; // Response accepted
 					config_write_done <= 1;
-                    current_state_mem_write <= SLV_WRITE_IDLE; // Return to IDLE to start the next write
+                    current_state_slave_write <= SLV_WRITE_IDLE; // Return to IDLE to start the next write
 				end
             end
 			

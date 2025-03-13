@@ -3,12 +3,12 @@ module axi_lite_slave #(
     parameter DATA_WIDTH = 32,
 	
 // Register Parameters for configuring the accelerator
-	parameter REG0_val = 32'h0000_0001,
-	parameter REG1_val = 32'h0000_0000,
-	parameter REG2_val = 32'h0000_0100,
-	parameter REG3_val = 32'h0000_0003,
-	parameter REG4_val = 32'h0001_0000,
-	parameter REG5_val = 32'h0000_0000
+	parameter REG0_val,// = 32'h0000_0001 Default value for REG0 from top module
+	parameter REG1_val,// = 32'h0000_0000 Default value for REG1 from top module
+	parameter REG2_val,// = 32'h0000_0100 Default value for REG2 from top module
+	parameter REG3_val,// = 32'h0000_0003 Default value for REG3 from top module
+	parameter REG4_val,// = 32'h0001_0000 Default value for REG4 from top module
+	parameter REG5_val // = 32'h0000_0000 Default value for REG5 from top module
 )(
     // AXI-Lite Interface Signals
     input wire                      ACLK,
