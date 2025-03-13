@@ -3,12 +3,12 @@ module axi_lite_slave #(
     parameter DATA_WIDTH = 32,
 	
 // Register Parameters for configuring the accelerator
-	parameter REG0_val,// = 32'h0000_0001 Default value for REG0 from top module
-	parameter REG1_val,// = 32'h0000_0000 Default value for REG1 from top module
-	parameter REG2_val,// = 32'h0000_0100 Default value for REG2 from top module
-	parameter REG3_val,// = 32'h0000_0003 Default value for REG3 from top module
-	parameter REG4_val,// = 32'h0001_0000 Default value for REG4 from top module
-	parameter REG5_val // = 32'h0000_0000 Default value for REG5 from top module
+	parameter REG0_val,// = 32'h0000_0001 Default value for REG0 (Control Register) from top module
+	parameter REG1_val,// = 32'h0000_0000 Default value for REG1 (Vector A Base Address) from top module
+	parameter REG2_val,// = 32'h0000_0100 Default value for REG2 (Vector B Base Address) from top module
+	parameter REG3_val,// = 32'h0000_0003 Default value for REG3 (Vector Length) from top module
+	parameter REG4_val,// = 32'h0000_1000 Default value for REG4 (Output Address) from top module
+	parameter REG5_val // = 32'h0000_0000 Default value for REG5 (Status Register) from top module
 )(
     // AXI-Lite Interface Signals
     input wire                      ACLK,
@@ -100,11 +100,11 @@ module axi_lite_slave #(
                         REG5_ADDR: REG5 <= WDATA;
                         default: BRESP <= 2'b10; // SLVERR
                     endcase
+                    BVALID <= 1'b1;
                     write_state <= WRITE_RESP;
                 end
 
                 WRITE_RESP: begin
-                    BVALID <= 1'b1;
                     if (BREADY) begin					//Checking if the Master is ready to receive a write response from Slave
                         BVALID <= 1'b0;
                         write_state <= WRITE_IDLE;

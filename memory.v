@@ -1,5 +1,6 @@
 module memory #(
-    parameter ADDR_WIDTH = 32, // 32-bit address for (2^32 - 1) locations
+    //parameter ADDR_WIDTH = 32, // 32-bit address for 2^32 locations - Enormous memory!
+    parameter ADDR_WIDTH = 16, // 16-bit address for 2^16 locations
     parameter DATA_WIDTH = 8   // 8-bit data width
 )(
     // Clock and Reset
@@ -69,11 +70,11 @@ module memory #(
                 WRITE_DATA: begin
                     wready <= 1'b0;
                     mem[awaddr] <= wdata; // Write data to memory
+                    bvalid <= 1'b1;
                     write_state <= WRITE_RESP;
                 end
 
                 WRITE_RESP: begin
-                    bvalid <= 1'b1;
                     if (bready) begin
                         bvalid <= 1'b0;
                         write_state <= WRITE_IDLE;
@@ -95,6 +96,7 @@ module memory #(
                 READ_IDLE: begin
                     if (arvalid) begin
                         arready <= 1'b1;
+						rdata <= {DATA_WIDTH{1'b0}};
                         read_state <= READ_ADDR;
                     end
                 end

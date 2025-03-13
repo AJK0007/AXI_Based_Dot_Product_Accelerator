@@ -45,21 +45,22 @@ module axi_master #(
     // Dot Product Accelerator Interface
     output reg [7:0]                DP_A,
     output reg [7:0]                DP_B,
-    input wire [31:0]               DP_RESULT,
+    input wire [DATA_WIDTH-1:0]     DP_RESULT,
     output reg                      DP_START,
     input wire                      DP_DONE,
 	output reg						inputs_ready,
+	output reg [DATA_WIDTH-1:0]		VECTOR_LENGTH_DP,
 	
 	// Start signal for AXI Master operations
 	input							start_signal
 );
 
     // Internal Registers
-	reg [ADDR_WIDTH-1:0]            CONTROL_REG;
-    reg [ADDR_WIDTH-1:0]            VECTOR_A_BASE;
-    reg [ADDR_WIDTH-1:0]            VECTOR_B_BASE;
-    reg [ADDR_WIDTH-1:0]            VECTOR_LENGTH;
-    reg [ADDR_WIDTH-1:0]            OUTPUT_ADDR;
+	reg [DATA_WIDTH-1:0]            CONTROL_REG;
+    reg [DATA_WIDTH-1:0]            VECTOR_A_BASE;
+    reg [DATA_WIDTH-1:0]            VECTOR_B_BASE;
+    reg [DATA_WIDTH-1:0]            VECTOR_LENGTH;
+    reg [DATA_WIDTH-1:0]            OUTPUT_ADDR;
 
     // Local Parameters for Register Addresses
     localparam REG0_ADDR = 32'h0000_0000;
@@ -254,17 +255,19 @@ always @(posedge ACLK or negedge ARESETN) begin
         DP_B <= 0;
 		inputs_ready <= 0;
 		vector_read_done <= 0;
+		VECTOR_LENGTH_DP <= 32'b0;
         current_state_mem_read <= MEM_READ_IDLE;
     end else begin
         case (current_state_mem_read)
             MEM_READ_IDLE: begin
                 if (current_state == READ_VECTORS && vector_index < VECTOR_LENGTH && !vector_read_done) begin
+					VECTOR_LENGTH_DP <= VECTOR_LENGTH;
 					inputs_ready <= 0;
                     MEM_ARADDR <= VECTOR_A_BASE + vector_index;
                     MEM_ARVALID <= 1; // Assert read address valid
                     current_state_mem_read <= MEM_READ_ADDR_A;
                 end
-				else if (vector_index == VECTOR_LENGTH) begin
+				else if (current_state == READ_VECTORS && vector_index == VECTOR_LENGTH) begin
 					vector_read_done <= 1;
 					current_state_mem_read <= MEM_READ_IDLE;
 				end
@@ -513,7 +516,7 @@ always @(posedge ACLK or negedge ARESETN) begin
                     current_state_slave_write <= SLV_WRITE_IDLE; // Return to IDLE to start the next write
 				end
             end
-			
+
         endcase
     end
 end
